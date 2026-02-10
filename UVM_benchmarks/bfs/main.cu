@@ -43,16 +43,33 @@ int *incrDegrees;
 
 
 void initCuda(Graph &G) {
-    checkError(cudaMallocManaged(&u_adjacencyList, G.numEdges * sizeof(int) ));
-    checkError(cudaMallocManaged(&u_edgesOffset, G.numVertices * sizeof(int) ));
-    checkError(cudaMallocManaged(&u_edgesSize, G.numVertices * sizeof(int)) );
-    checkError(cudaMallocManaged(&u_distance, G.numVertices * sizeof(int) ));
-    checkError(cudaMallocManaged(&u_parent, G.numVertices * sizeof(int) ));
-    checkError(cudaMallocManaged(&u_currentQueue, G.numVertices * sizeof(int) ));
-    checkError(cudaMallocManaged(&u_nextQueue, G.numVertices * sizeof(int) ));
-    checkError(cudaMallocManaged(&u_degrees, G.numVertices * sizeof(int) ));
+    checkError(cudaMallocManaged(&u_adjacencyList, G.numEdges * sizeof(int), cudaMemAttachGlobal ));
+    checkError(cudaMallocManaged(&u_edgesOffset, G.numVertices * sizeof(int), cudaMemAttachGlobal ));
+    checkError(cudaMallocManaged(&u_edgesSize, G.numVertices * sizeof(int), cudaMemAttachGlobal) );
+    checkError(cudaMallocManaged(&u_distance, G.numVertices * sizeof(int) , cudaMemAttachGlobal));
+    checkError(cudaMallocManaged(&u_parent, G.numVertices * sizeof(int), cudaMemAttachGlobal));
+    checkError(cudaMallocManaged(&u_currentQueue, G.numVertices * sizeof(int) , cudaMemAttachGlobal));
+    checkError(cudaMallocManaged(&u_nextQueue, G.numVertices * sizeof(int) , cudaMemAttachGlobal));
+    checkError(cudaMallocManaged(&u_degrees, G.numVertices * sizeof(int), cudaMemAttachGlobal ));
 
 
+    // also add cudaMemAdvise
+    // checkError(cudaMemAdvise(u_adjacencyList, G.numEdges * sizeof(int), cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
+    // checkError(cudaMemAdvise(u_adjacencyList, G.numEdges * sizeof(int), cudaMemAdviseSetAccessedBy, 0));
+    // checkError(cudaMemAdvise(u_edgesOffset, G.numVertices * sizeof(int), cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
+    // checkError(cudaMemAdvise(u_edgesOffset, G.numVertices * sizeof(int), cudaMemAdviseSetAccessedBy, 0));
+    // checkError(cudaMemAdvise(u_edgesSize, G.numVertices * sizeof(int), cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
+    // checkError(cudaMemAdvise(u_edgesSize, G.numVertices * sizeof(int), cudaMemAdviseSetAccessedBy, 0));
+    // checkError(cudaMemAdvise(u_distance, G.numVertices * sizeof(int), cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
+    // checkError(cudaMemAdvise(u_distance, G.numVertices * sizeof(int), cudaMemAdviseSetAccessedBy, 0));
+    // checkError(cudaMemAdvise(u_parent, G.numVertices * sizeof(int), cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
+    // checkError(cudaMemAdvise(u_parent, G.numVertices * sizeof(int), cudaMemAdviseSetAccessedBy, 0));
+    // checkError(cudaMemAdvise(u_currentQueue, G.numVertices * sizeof(int), cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
+    // checkError(cudaMemAdvise(u_currentQueue, G.numVertices * sizeof(int), cudaMemAdviseSetAccessedBy, 0));
+    // checkError(cudaMemAdvise(u_nextQueue, G.numVertices * sizeof(int), cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
+    // checkError(cudaMemAdvise(u_nextQueue, G.numVertices * sizeof(int), cudaMemAdviseSetAccessedBy, 0));
+    // checkError(cudaMemAdvise(u_degrees, G.numVertices * sizeof(int), cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
+    // checkError(cudaMemAdvise(u_degrees, G.numVertices * sizeof(int), cudaMemAdviseSetAccessedBy, 0));
 
     checkError(cudaMallocHost((void **) &incrDegrees, sizeof(int) * G.numVertices));
 
@@ -63,7 +80,26 @@ void initCuda(Graph &G) {
     // checkError(cudaMemcpy(d_adjacencyList, G.adjacencyList.data(), G.numEdges * sizeof(int), cudaMemcpyHostToDevice));
     // checkError(cudaMemcpy(d_edgesOffset, G.edgesOffset.data(), G.numVertices * sizeof(int), cudaMemcpyHostToDevice));
     // checkError(cudaMemcpy(d_edgesSize, G.edgesSize.data(), G.numVertices * sizeof(int), cudaMemcpyHostToDevice ));
-
+    //also add prefetching: - need to be sure that we dont prefetch too much
+    // int max_size = 15 * 1024 * 1024 * 1024;
+    // int actual_prefetch = 0;
+    // actual_prefetch += G.numEdges * sizeof(int);
+    // if(actual_prefetch < max_size) checkError(cudaMemPrefetchAsync(u_adjacencyList, G.numEdges * sizeof(int), 0, 0));
+    // actual_prefetch += G.numVertices * sizeof(int);
+    // if(actual_prefetch < max_size)checkError(cudaMemPrefetchAsync(u_edgesOffset, G.numVertices * sizeof(int), 0, 0));
+    // actual_prefetch += G.numVertices * sizeof(int);
+    // if(actual_prefetch < max_size)checkError(cudaMemPrefetchAsync(u_edgesSize, G.numVertices * sizeof(int), 0, 0));
+    // actual_prefetch += G.numVertices * sizeof(int);
+    // if(actual_prefetch < max_size)checkError(cudaMemPrefetchAsync(u_distance, G.numVertices * sizeof(int), 0, 0));
+    // actual_prefetch += G.numVertices * sizeof(int);
+    // if(actual_prefetch < max_size)checkError(cudaMemPrefetchAsync(u_parent, G.numVertices * sizeof(int), 0, 0));
+    // actual_prefetch += G.numVertices * sizeof(int);
+    // if(actual_prefetch < max_size)checkError(cudaMemPrefetchAsync(u_currentQueue, G.numVertices * sizeof(int), 0, 0));
+    // actual_prefetch += G.numVertices * sizeof(int);
+    // if(actual_prefetch < max_size)checkError(cudaMemPrefetchAsync(u_nextQueue, G.numVertices * sizeof(int), 0, 0));
+    // actual_prefetch += G.numVertices * sizeof(int);
+    // if(actual_prefetch < max_size)checkError(cudaMemPrefetchAsync(u_degrees, G.numVertices * sizeof(int), 0, 0));
+    cudaDeviceSynchronize();
 }
 
 void finalizeCuda() {
@@ -82,6 +118,32 @@ void finalizeCuda() {
 
 
 void checkOutput(std::vector<int> &distance, std::vector<int> &expectedDistance, Graph &G) {
+        // int max_size = 15 * 1024 * 1024 * 1024;
+    // int actual_prefetch = 0;
+    // actual_prefetch += G.numEdges * sizeof(int);
+    // if(actual_prefetch < max_size) 
+    checkError(cudaMemPrefetchAsync(u_adjacencyList, G.numEdges * sizeof(int), cudaCpuDeviceId, 0));
+    // actual_prefetch += G.numVertices * sizeof(int);
+    // if(actual_prefetch < max_size)
+    checkError(cudaMemPrefetchAsync(u_edgesOffset, G.numVertices * sizeof(int), cudaCpuDeviceId, 0));
+    // actual_prefetch += G.numVertices * sizeof(int);
+    // if(actual_prefetch < max_size)
+    checkError(cudaMemPrefetchAsync(u_edgesSize, G.numVertices * sizeof(int), cudaCpuDeviceId, 0));
+    // actual_prefetch += G.numVertices * sizeof(int);
+    // if(actual_prefetch < max_size)
+    checkError(cudaMemPrefetchAsync(u_distance, G.numVertices * sizeof(int), cudaCpuDeviceId, 0));
+    // actual_prefetch += G.numVertices * sizeof(int);
+    // if(actual_prefetch < max_size)
+    checkError(cudaMemPrefetchAsync(u_parent, G.numVertices * sizeof(int), cudaCpuDeviceId, 0));
+    // actual_prefetch += G.numVertices * sizeof(int);
+    // if(actual_prefetch < max_size)
+    checkError(cudaMemPrefetchAsync(u_currentQueue, G.numVertices * sizeof(int), cudaCpuDeviceId, 0));
+    // actual_prefetch += G.numVertices * sizeof(int);
+    // if(actual_prefetch < max_size)
+    checkError(cudaMemPrefetchAsync(u_nextQueue, G.numVertices * sizeof(int), cudaCpuDeviceId, 0));
+    // actual_prefetch += G.numVertices * sizeof(int);
+    // if(actual_prefetch < max_size)
+    checkError(cudaMemPrefetchAsync(u_degrees, G.numVertices * sizeof(int), cudaCpuDeviceId, 0));
     for (int i = 0; i < G.numVertices; i++) {
         if (*(u_distance+i) != expectedDistance[i]) {
             printf("%d %d %d\n", i, distance[i], expectedDistance[i]);
@@ -105,7 +167,11 @@ void initializeCudaBfs(int startVertex, std::vector<int> &distance, std::vector<
     // checkError(cudaMemcpy(d_parent, parent.data(), G.numVertices * sizeof(int), cudaMemcpyHostToDevice));
     memcpy(u_distance, distance.data(), G.numVertices * sizeof(int));
     memcpy(u_parent, parent.data(), G.numVertices * sizeof(int));
-
+    // int dev; cudaGetDevice(&dev);
+    // cudaMemPrefetchAsync(u_distance,    G.numVertices*sizeof(int), dev);
+    // cudaMemPrefetchAsync(u_parent,      G.numVertices*sizeof(int), dev);
+    // cudaMemPrefetchAsync(u_currentQueue,G.numVertices*sizeof(int), dev);
+    // cudaDeviceSynchronize();
     int firstElementQueue = startVertex;
     // cudaMemcpy(d_currentQueue, &firstElementQueue, sizeof(int), cudaMemcpyHostToDevice);
     *u_currentQueue = firstElementQueue;
@@ -269,7 +335,7 @@ int main(int argc, char **argv) {
     std::vector<bool> visited(G.numVertices, false);
 
     //run CPU sequential bfs
-    runCpu(startVertex, G, distance, parent, visited);
+    //runCpu(startVertex, G, distance, parent, visited);
 
     //save results from sequential bfs
     std::vector<int> expectedDistance(distance);
@@ -277,16 +343,16 @@ int main(int argc, char **argv) {
     auto start = std::chrono::steady_clock::now();
     initCuda(G);
     //run CUDA simple parallel bfs
-    runCudaSimpleBfs(startVertex, G, distance, parent);
-    checkOutput(distance, expectedDistance, G);
+    //runCudaSimpleBfs(startVertex, G, distance, parent);
+    //checkOutput(distance, expectedDistance, G);
 
     // //run CUDA queue parallel bfs
     runCudaQueueBfs(startVertex, G, distance, parent);
-    checkOutput(distance, expectedDistance, G);
+    //checkOutput(distance, expectedDistance, G);
 
     // //run CUDA scan parallel bfs
-    runCudaScanBfs(startVertex, G, distance, parent);
-    checkOutput(distance, expectedDistance, G);
+    //runCudaScanBfs(startVertex, G, distance, parent);
+    //checkOutput(distance, expectedDistance, G);
     finalizeCuda();
     auto end = std::chrono::steady_clock::now();
     long duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();

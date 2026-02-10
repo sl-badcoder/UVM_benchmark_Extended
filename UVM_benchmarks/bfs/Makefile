@@ -1,14 +1,14 @@
-CUDA_INSTALL_PATH ?= /usr/local/cuda-10.2/
+#CUDA_INSTALL_PATH ?= /usr/local/cuda-10.2/
 GCC_VER = -5
 
 CXX := /usr/bin/g++
 CC := /usr/bin/gcc
 CCPATH := gcc
 
-NVCC  := $(CUDA_INSTALL_PATH)bin/nvcc -ccbin $(CCPATH)
+NVCC  := /bin/nvcc -ccbin $(CCPATH)
 LINK := $(NVCC)
 
-INCLUDES := -I. -I$(CUDA_INSTALL_PATH)include
+INCLUDES := -I. -Iinclude
 # Libraries
 LIB_CUDA := -L/usr/lib/nvidia-current -lcuda
 
