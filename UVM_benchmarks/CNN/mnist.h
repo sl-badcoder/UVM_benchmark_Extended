@@ -88,10 +88,9 @@ _STATIC int mnist_load(
 
 	unsigned int image_cnt, label_cnt;
 	unsigned int image_dim[2];
-
+	cudaError_t err_ = cudaSuccess;
 	FILE *ifp = fopen(image_filename, "rb");
 	FILE *lfp = fopen(label_filename, "rb");
-
 	if (!ifp || !lfp) {
 		return_code = -1; /* No such files */
 		goto cleanup;
@@ -131,8 +130,16 @@ _STATIC int mnist_load(
 	}
 
 	*count = image_cnt;
-	*data = (mnist_data *)malloc(sizeof(mnist_data) * image_cnt);
-
+	err_ = cudaMallocManaged(data, sizeof(mnist_data) * image_cnt, cudaMemAttachGlobal);
+	size_t free_m, total_m;
+	cudaMemGetInfo(&free_m, &total_m);
+	//cudaMemAdvise(data, (sizeof(mnist_data) * image_cnt), cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
+	//cudaMemAdvise(data, (sizeof(mnist_data) * image_cnt), cudaMemAdviseUnsetAccessedBy, 0);
+	cudaGetLastError();
+	if (err_ != cudaSuccess) {
+		fprintf(stderr, "CUDA Malloc Failed: %s\n", cudaGetErrorString(err_));
+		return -5;
+	}
 	for (i = 0; i < image_cnt; ++i) {
 		int j;
 		unsigned char read_data[28 * 28];
@@ -150,6 +157,8 @@ _STATIC int mnist_load(
 
 		fread(tmp, 1, 1, lfp);
 		d->label = tmp[0];
+		// cudaMemPrefetchAsync(data, (sizeof(mnist_data) * image_cnt) % free_m, 0, 0);
+		// cudaDeviceSynchronize();
 	}
 
 cleanup:
