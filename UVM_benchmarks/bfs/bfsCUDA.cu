@@ -1,20 +1,26 @@
 #include <device_launch_parameters.h>
 #include <cstdio>
 #include <bfsCUDA.cuh>
-
-// #ifndef _BFSCUDA_H_
-// #define _BFSCUDA_H_
-// extern "C" {
+#include <cstddef>   // size_t
+#include <climits>   // INT_MAX
 
 __global__
-void simpleBfs(int N, int level, int *d_adjacencyList, int *d_edgesOffset,
-               int *d_edgesSize, int *d_distance, int *d_parent, int *changed) {
+void simpleBfs(int N, int level,
+               int *d_adjacencyList,
+               const size_t *d_edgesOffset,
+               const size_t *d_edgesSize,
+               int *d_distance,
+               size_t *d_parent,
+               int *changed) {
     int thid = blockIdx.x * blockDim.x + threadIdx.x;
     int valueChange = 0;
 
     if (thid < N && d_distance[thid] == level) {
         int u = thid;
-        for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
+        size_t start = d_edgesOffset[u];
+        size_t end   = start + static_cast<size_t>(d_edgesSize[u]);
+
+        for (size_t i = start; i < end; i++) {
             int v = d_adjacencyList[i];
             if (level + 1 < d_distance[v]) {
                 d_distance[v] = level + 1;
@@ -30,13 +36,24 @@ void simpleBfs(int N, int level, int *d_adjacencyList, int *d_edgesOffset,
 }
 
 __global__
-void queueBfs(int level, int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_distance, int *d_parent,
-              int queueSize, int *nextQueueSize, int *d_currentQueue, int *d_nextQueue) {
+void queueBfs(int level,
+              int *d_adjacencyList,
+              const size_t *d_edgesOffset,
+              const size_t *d_edgesSize,
+              int *d_distance,
+              size_t *d_parent,
+              int queueSize,
+              int *nextQueueSize,
+              int *d_currentQueue,
+              int *d_nextQueue) {
     int thid = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (thid < queueSize) {
         int u = d_currentQueue[thid];
-        for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
+        size_t start = d_edgesOffset[u];
+        size_t end   = start + static_cast<size_t>(d_edgesSize[u]);
+
+        for (size_t i = start; i < end; i++) {
             int v = d_adjacencyList[i];
             if (d_distance[v] == INT_MAX && atomicMin(&d_distance[v], level + 1) == INT_MAX) {
                 d_parent[v] = i;
@@ -47,15 +64,24 @@ void queueBfs(int level, int *d_adjacencyList, int *d_edgesOffset, int *d_edgesS
     }
 }
 
-//Scan bfs
+// Scan bfs
 __global__
-void nextLayer(int level, int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_distance, int *d_parent,
-               int queueSize, int *d_currentQueue) {
+void nextLayer(int level,
+               int *d_adjacencyList,
+               const size_t *d_edgesOffset,
+               const size_t *d_edgesSize,
+               int *d_distance,
+               size_t *d_parent,
+               int queueSize,
+               int *d_currentQueue) {
     int thid = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (thid < queueSize) {
         int u = d_currentQueue[thid];
-        for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
+        size_t start = d_edgesOffset[u];
+        size_t end   = start + static_cast<size_t>(d_edgesSize[u]);
+
+        for (size_t i = start; i < end; i++) {
             int v = d_adjacencyList[i];
             if (level + 1 < d_distance[v]) {
                 d_distance[v] = level + 1;
@@ -66,14 +92,23 @@ void nextLayer(int level, int *d_adjacencyList, int *d_edgesOffset, int *d_edges
 }
 
 __global__
-void countDegrees(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_parent,
-                  int queueSize, int *d_currentQueue, int *d_degrees) {
+void countDegrees(int *d_adjacencyList,
+                  const size_t *d_edgesOffset,
+                  const size_t *d_edgesSize,
+                  const size_t *d_parent,
+                  int queueSize,
+                  int *d_currentQueue,
+                  int *d_degrees) {
     int thid = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (thid < queueSize) {
         int u = d_currentQueue[thid];
         int degree = 0;
-        for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
+
+        size_t start = d_edgesOffset[u];
+        size_t end   = start + static_cast<size_t>(d_edgesSize[u]);
+
+        for (size_t i = start; i < end; i++) {
             int v = d_adjacencyList[i];
             if (d_parent[v] == i && v != u) {
                 ++degree;
@@ -88,14 +123,11 @@ void scanDegrees(int size, int *d_degrees, int *incrDegrees) {
     int thid = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (thid < size) {
-        //write initial values to shared memory
         __shared__ int prefixSum[1024];
         int modulo = threadIdx.x;
         prefixSum[modulo] = d_degrees[thid];
         __syncthreads();
 
-        //calculate scan on this block
-        //go up
         for (int nodeSize = 2; nodeSize <= 1024; nodeSize <<= 1) {
             if ((modulo & (nodeSize - 1)) == 0) {
                 if (thid + (nodeSize >> 1) < size) {
@@ -106,13 +138,11 @@ void scanDegrees(int size, int *d_degrees, int *incrDegrees) {
             __syncthreads();
         }
 
-        //write information for increment prefix sums
         if (modulo == 0) {
             int block = thid >> 10;
             incrDegrees[block + 1] = prefixSum[modulo];
         }
 
-        //go down
         for (int nodeSize = 1024; nodeSize > 1; nodeSize >>= 1) {
             if ((modulo & (nodeSize - 1)) == 0) {
                 if (thid + (nodeSize >> 1) < size) {
@@ -120,19 +150,24 @@ void scanDegrees(int size, int *d_degrees, int *incrDegrees) {
                     int tmp = prefixSum[modulo];
                     prefixSum[modulo] -= prefixSum[next_position];
                     prefixSum[next_position] = tmp;
-
                 }
             }
             __syncthreads();
         }
         d_degrees[thid] = prefixSum[modulo];
     }
-
 }
 
 __global__
-void assignVerticesNextQueue(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_parent, int queueSize,
-                             int *d_currentQueue, int *d_nextQueue, int *d_degrees, int *incrDegrees,
+void assignVerticesNextQueue(int *d_adjacencyList,
+                             const size_t *d_edgesOffset,
+                             const size_t *d_edgesSize,
+                             const size_t *d_parent,
+                             int queueSize,
+                             int *d_currentQueue,
+                             int *d_nextQueue,
+                             int *d_degrees,
+                             int *incrDegrees,
                              int nextQueueSize) {
     int thid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -149,17 +184,20 @@ void assignVerticesNextQueue(int *d_adjacencyList, int *d_edgesOffset, int *d_ed
         }
 
         int u = d_currentQueue[thid];
-        int counter = 0;
-        for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
+        size_t counter = 0;
+
+        size_t start = d_edgesOffset[u];
+        size_t end   = start + static_cast<size_t>(d_edgesSize[u]);
+
+        for (size_t i = start; i < end; i++) {
             int v = d_adjacencyList[i];
             if (d_parent[v] == i && v != u) {
-                int nextQueuePlace = sharedIncrement + sum + counter;
+                size_t nextQueuePlace = static_cast<size_t>(sharedIncrement) + static_cast<size_t>(sum) + counter;
+                // d_nextQueue is int*, so this still assumes nextQueuePlace fits in int range.
+                // If you want queue indices > 2^31, d_nextQueue must be size_t-indexable too.
                 d_nextQueue[nextQueuePlace] = v;
                 counter++;
             }
         }
     }
 }
-
-// }
-// #endif 

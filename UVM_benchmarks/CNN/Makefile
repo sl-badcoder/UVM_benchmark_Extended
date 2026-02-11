@@ -1,7 +1,7 @@
 include ../../common/make.config
 
 
-CC := $(CUDA_DIR)/bin/nvcc
+CC := /bin/nvcc
 
 all:
 	$(CC) -lcuda -lcublas *.cu -o CNN

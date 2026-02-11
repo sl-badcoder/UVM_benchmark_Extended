@@ -4,6 +4,7 @@
 #include <random>
 #include <limits>
 #include <unordered_set>
+#include <cstddef>   // size_t
 
 // Simple 64-bit RNG (fast, deterministic)
 static inline uint64_t splitmix64(uint64_t& x) {
@@ -19,8 +20,9 @@ void makeRandomGraphFixedDegree(Graph &G, size_t n, size_t deg,
                                 bool tryAvoidDuplicates = false,
                                 uint64_t seed = 12345)
 {
-    if (n <= 0 || deg < 0) {
-        fprintf(stderr, "Invalid n/deg\n");
+    // deg is size_t, so "deg < 0" is meaningless; keep only the real check
+    if (n == 0) {
+        fprintf(stderr, "Invalid n\n");
         std::exit(1);
     }
 
@@ -31,14 +33,10 @@ void makeRandomGraphFixedDegree(Graph &G, size_t n, size_t deg,
     G.edgesOffset.reserve(n);
     G.edgesSize.reserve(n);
 
-    // For directed: E = n * deg
-    // For undirected: we'll add symmetric edges, so ~2 * n * deg
     const uint64_t E_directed = (uint64_t)n * (uint64_t)deg;
     const uint64_t E_total = undirected ? (2ULL * E_directed) : E_directed;
 
     if (E_total > (uint64_t)std::numeric_limits<int>::max()) {
-        // With int offsets/sizes you'll overflow eventually.
-        // You can still build adjacencyList (vector<int>) but offsets may break for huge graphs.
         fprintf(stderr, "Warning: edge count %llu may overflow 32-bit offsets.\n",
                 (unsigned long long)E_total);
     }
@@ -48,18 +46,11 @@ void makeRandomGraphFixedDegree(Graph &G, size_t n, size_t deg,
     uint64_t rng = seed;
 
     // Build CSR directly
-    for (int u = 0; u < n; u++) {
-        G.edgesOffset.push_back((int)G.adjacencyList.size());
+    for (size_t u = 0; u < n; u++) {
+        // Do NOT truncate adjacencyList.size()
+        G.edgesOffset.push_back((size_t)G.adjacencyList.size());
 
-        if (!undirected) {
-            G.edgesSize.push_back(deg);
-        } else {
-            // For undirected we will push deg neighbors for u,
-            // but also add reverse edges into neighbors later would require two-pass.
-            // Easiest: just treat as directed here unless you do a second pass.
-            // So: if you want truly undirected CSR in one pass, don't do it this way.
-            G.edgesSize.push_back(deg);
-        }
+        G.edgesSize.push_back(deg);
 
         if (!tryAvoidDuplicates) {
             for (size_t k = 0; k < deg; k++) {
@@ -67,11 +58,14 @@ void makeRandomGraphFixedDegree(Graph &G, size_t n, size_t deg,
                 do {
                     v = (size_t)(splitmix64(rng) % (uint64_t)n);
                 } while (noSelfLoops && v == u);
-                G.adjacencyList.push_back(v);
+
+                // adjacencyList element type may still be int in Graph.
+                // Keep vertex IDs within int range unless Graph is updated.
+                G.adjacencyList.push_back((int)v);
             }
         } else {
             // Avoid duplicates within this adjacency list (costly for large deg)
-            std::unordered_set<int> used;
+            std::unordered_set<size_t> used;
             used.reserve((size_t)deg * 2);
 
             size_t added = 0;
@@ -79,7 +73,7 @@ void makeRandomGraphFixedDegree(Graph &G, size_t n, size_t deg,
                 size_t v = (size_t)(splitmix64(rng) % (uint64_t)n);
                 if (noSelfLoops && v == u) continue;
                 if (used.insert(v).second) {
-                    G.adjacencyList.push_back(v);
+                    G.adjacencyList.push_back((int)v);
                     added++;
                 }
             }
@@ -90,30 +84,27 @@ void makeRandomGraphFixedDegree(Graph &G, size_t n, size_t deg,
     G.numEdges = (size_t)G.adjacencyList.size();
 
     if (undirected) {
-        // NOTE: Proper undirected CSR requires adding reverse edges too.
-        // Doing it right needs a 2-pass build (count degrees, prefix sum, fill).
-        // If you need that, use Option B below.
         fprintf(stderr, "Note: undirected=true is not fully implemented in Option A (directed CSR produced).\n");
     }
 }
 
 void readGraph(Graph &G, int argc, char **argv) {
     // Usage:
-    //   ./bfs <startVertex> <nVertxsices> <degree>
-    // Example:
-    //   ./bfs 0 10000000 16
+    //   ./bfs <startVertex> <nVertices> <degree>
     if (argc < 4) {
         fprintf(stderr, "Usage: %s <startVertex> <nVertices> <degree>\n", argv[0]);
         std::exit(1);
     }
-    int n = atoi(argv[2]);
-    int deg = atoi(argv[3]);
+
+    size_t n = (size_t)strtoull(argv[2], nullptr, 10);
+    size_t deg = (size_t)strtoull(argv[3], nullptr, 10);
 
     makeRandomGraphFixedDegree(G, n, deg, /*undirected=*/false,
                                /*noSelfLoops=*/true,
                                /*tryAvoidDuplicates=*/false,
                                /*seed=*/12345);
 }
+
 
 // void readGraph(Graph &G, int argc, char **argv) {
 //     int n;

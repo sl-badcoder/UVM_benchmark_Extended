@@ -6,6 +6,6 @@
 #include "graph.h"
 
 void bfsCPU(int start, Graph &G, std::vector<int> &distance,
-            std::vector<int> &parent, std::vector<bool> &visited);
+            std::vector<size_t> &parent, std::vector<bool> &visited);
 
 #endif //BFS_CUDA_BFSCPU_H

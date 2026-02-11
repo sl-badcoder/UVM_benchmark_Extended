@@ -4,13 +4,14 @@
 #include <vector>
 #include <cstdio>
 #include <cstdlib>
+#include <cstddef>  // size_t
 
 struct Graph {
-    std::vector<int> adjacencyList; // all edges
-    std::vector<int> edgesOffset; // offset to adjacencyList for every vertex
-    std::vector<int> edgesSize; //number of edges for every vertex
-    int numVertices = 0;
-    int numEdges = 0;
+    std::vector<int> adjacencyList;       // all edges (vertex IDs)
+    std::vector<size_t> edgesOffset;      // offset to adjacencyList for every vertex
+    std::vector<size_t> edgesSize;        // number of edges for every vertex
+    size_t numVertices = 0;
+    size_t numEdges = 0;
 };
 
 void readGraph(Graph &G, int argc, char **argv);

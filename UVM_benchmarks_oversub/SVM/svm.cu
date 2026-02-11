@@ -8,6 +8,7 @@ by Qin Yu, Apr 2019
 using namespace std;
 
 #include "svm.h"
+#include <cstdint>
 
 // Not used but may help:
 // #include <stdio.h>

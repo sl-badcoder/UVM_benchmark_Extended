@@ -1,7 +1,7 @@
 #include "bfsCPU.h"
 
 void bfsCPU(int start, Graph &G, std::vector<int> &distance,
-            std::vector<int> &parent, std::vector<bool> &visited) {
+            std::vector<size_t> &parent, std::vector<bool> &visited) {
     distance[start] = 0;
     parent[start] = start;
     visited[start] = true;
