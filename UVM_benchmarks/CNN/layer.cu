@@ -14,6 +14,7 @@ Layer::Layer(int M, int N, int O) {
   bias = NULL;
   weight = NULL;
   cudaStreamCreate(&stream);
+  // allocate everything
   cudaMallocManaged(&output, sizeof(float) * O);
   cudaMallocManaged(&preact, sizeof(float) * O);
 
@@ -24,6 +25,8 @@ Layer::Layer(int M, int N, int O) {
   cudaMallocManaged(&d_output, sizeof(float) * O);
   cudaMallocManaged(&d_preact, sizeof(float) * O);
   cudaMallocManaged(&d_weight, sizeof(float) * M * N);
+
+
 
   for (int i = 0; i < N; ++i) {
     // h_bias[i] = 0.5f - float(rand()) / float(RAND_MAX);
@@ -41,6 +44,36 @@ Layer::Layer(int M, int N, int O) {
   // cudaMemcpy(weight, h_weight, sizeof(float) * M * N,
   // cudaMemcpyHostToDevice);
   // memcpy(weight, h_weight, sizeof(float) * M * N);
+  
+  // cudaMemAdvise(output, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
+   //cudaMemAdvise(output, sizeof(float) * O, cudaMemAdviseSetAccessedBy, 0);
+  // cudaMemAdvise(preact, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
+  // cudaMemAdvise(preact, sizeof(float) * O, cudaMemAdviseSetAccessedBy, 0);
+  //cudaMemAdvise(bias, sizeof(float) * N, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
+  // //cudaMemAdvise(bias, sizeof(float) * N, cudaMemAdviseSetAccessedBy, cudaCpuDeviceId);
+  //cudaMemAdvise(bias, sizeof(float) * N, cudaMemAdviseSetAccessedBy, 0);
+
+  // cudaMemAdvise(weight, sizeof(float) * M * N, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
+  // cudaMemAdvise(weight, sizeof(float) * M * N, cudaMemAdviseSetAccessedBy, 0);
+
+  // cudaMemAdvise(d_output, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
+  //cudaMemAdvise(d_output, sizeof(float) * O, cudaMemAdviseSetAccessedBy, 0);
+  // cudaMemAdvise(d_preact, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
+  //cudaMemAdvise(d_preact, sizeof(float) * O, cudaMemAdviseSetAccessedBy, 0);
+  // cudaMemAdvise(d_weight, sizeof(float) * M * N, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
+  //cudaMemAdvise(d_weight, sizeof(float) * M * N, cudaMemAdviseSetAccessedBy, 0);
+  // prefetching the world
+  size_t free_m, total_m;
+  cudaMemGetInfo(&free_m, &total_m);
+  cudaMemPrefetchAsync(output, sizeof(float) * O % free_m, 0, stream);
+  cudaMemPrefetchAsync(preact, sizeof(float) * O% free_m, 0, stream);
+  cudaMemPrefetchAsync(bias, sizeof(float) * N% free_m, 0, stream);
+  cudaMemPrefetchAsync(weight, sizeof(float) * M * N% free_m, 0, stream);
+  //cudaMemAdvise(weight, sizeof(float) * M * N, cudaMemAdviseSetAccessedBy, 0);
+
+  cudaMemPrefetchAsync(d_output, sizeof(float) * O% free_m, 0, stream);
+  cudaMemPrefetchAsync(d_preact, sizeof(float) * O% free_m, 0, stream);
+  cudaMemPrefetchAsync(d_weight, sizeof(float) * M * N% free_m, 0, stream);
 }
 
 // Destructor
@@ -65,14 +98,23 @@ void Layer::setOutput(float *data) {
 
 // Reset GPU memory between iterations
 void Layer::clear() {
-  cudaMemset(output, 0x00, sizeof(float) * O);
-  cudaMemset(preact, 0x00, sizeof(float) * O);
+  // cudaMemPrefetchAsync(output, sizeof(float) * O, 0, stream);
+  // cudaMemPrefetchAsync(preact, sizeof(float) * O, 0,  stream);
+  cudaMemsetAsync(output, 0x00, sizeof(float) * O, stream);
+  cudaMemsetAsync(preact, 0x00, sizeof(float) * O, stream);
 }
 
 void Layer::bp_clear() {
-  cudaMemset(d_output, 0x00, sizeof(float) * O);
-  cudaMemset(d_preact, 0x00, sizeof(float) * O);
-  cudaMemset(d_weight, 0x00, sizeof(float) * M * N);
+  int dev = 0;
+  cudaGetDevice(&dev);
+
+  // Make sure gradient buffers are on the GPU before first touch
+  // cudaMemPrefetchAsync(d_output, sizeof(float) * O, dev, stream);
+  // cudaMemPrefetchAsync(d_preact, sizeof(float) * O, dev, stream);
+  // cudaMemPrefetchAsync(d_weight, sizeof(float) * M * N, dev, stream);
+  cudaMemsetAsync(d_output, 0x00, sizeof(float) * O, stream);
+  cudaMemsetAsync(d_preact, 0x00, sizeof(float) * O, stream);
+  cudaMemsetAsync(d_weight, 0x00, sizeof(float) * M * N, stream);
 }
 
 __device__ float step_function(float v) { return 1 / (1 + exp(-v)); }
