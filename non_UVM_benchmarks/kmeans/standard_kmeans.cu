@@ -1,271 +1,301 @@
-#include <algorithm>
+#include <cuda_runtime.h>
+
 #include <cfloat>
-#include <chrono>
-#include <fstream>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
-#include <random>
-#include <sstream>
+#include <limits>
 #include <stdexcept>
-#include <vector>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string>
+#include <chrono>
+#include <algorithm>
 
-double std_time_used;
-struct Data {
-  Data(int size) : size(size), bytes(size * sizeof(float)) {
-    cudaMalloc(&x, bytes);
-    cudaMalloc(&y, bytes);
-    cudaMemset(x, 0, bytes);
-    cudaMemset(y, 0, bytes);
-  }
+#define CUDA_CHECK(call)                                                                 \
+  do {                                                                                   \
+    cudaError_t _e = (call);                                                             \
+    if (_e != cudaSuccess) {                                                             \
+      std::cerr << "CUDA error: " << cudaGetErrorString(_e)                              \
+                << " at " << __FILE__ << ":" << __LINE__ << std::endl;                  \
+      std::exit(EXIT_FAILURE);                                                          \
+    }                                                                                    \
+  } while (0)
 
-  Data(int size, std::vector<float>& h_x, std::vector<float>& h_y)
-  : size(size), bytes(size * sizeof(float)) {
-    cudaMalloc(&x, bytes);
-    cudaMalloc(&y, bytes);
-    cudaMemcpy(x, h_x.data(), bytes, cudaMemcpyHostToDevice);
-    cudaMemcpy(y, h_y.data(), bytes, cudaMemcpyHostToDevice);
-  }
-
-  ~Data() {
-    cudaFree(x);
-    cudaFree(y);
-  }
-
-  float* x{nullptr};
-  float* y{nullptr};
-  int size{0};
-  int bytes{0};
-};
-
-__device__ float
-squared_l2_distance(float x_1, float y_1, float x_2, float y_2) {
-  return (x_1 - x_2) * (x_1 - x_2) + (y_1 - y_2) * (y_1 - y_2);
+// ---------------- SAFE MATH ----------------
+static inline bool mul_overflow_size(size_t a, size_t b, size_t* out) {
+  if (a == 0 || b == 0) { *out = 0; return false; }
+  if (a > std::numeric_limits<size_t>::max() / b) return true;
+  *out = a * b;
+  return false;
 }
 
-__global__ void fine_reduce(const float* __restrict__ data_x,
-                            const float* __restrict__ data_y,
-                            int data_size,
-                            const float* __restrict__ means_x,
-                            const float* __restrict__ means_y,
-                            float* __restrict__ new_sums_x,
-                            float* __restrict__ new_sums_y,
-                            int k,
-                            int* __restrict__ counts) {
-  extern __shared__ float shared_data[];
+static inline bool mul_overflow_u64(uint64_t a, uint64_t b, uint64_t* out) {
+  if (a == 0 || b == 0) { *out = 0; return false; }
+  if (a > std::numeric_limits<uint64_t>::max() / b) return true;
+  *out = a * b;
+  return false;
+}
 
-  const int local_index = threadIdx.x;
-  const int global_index = blockIdx.x * blockDim.x + threadIdx.x;
-  if (global_index >= data_size) return;
+static inline size_t div_ceil(size_t a, size_t b) {
+  return (a + b - 1) / b;
+}
 
-  // Load the mean values into shared memory.
-  if (local_index < k) {
-    shared_data[local_index] = means_x[local_index];
-    shared_data[k + local_index] = means_y[local_index];
+// ---------------- SAFE PARSING ----------------
+static int parse_int(const char* s) {
+  char* end = nullptr;
+  errno = 0;
+  long v = std::strtol(s, &end, 10);
+  if (errno || *end != '\0' || v <= 0 || v > INT32_MAX)
+    throw std::runtime_error("invalid int");
+  return (int)v;
+}
+
+static uint64_t parse_u64(const char* s) {
+  char* end = nullptr;
+  errno = 0;
+  unsigned long long v = std::strtoull(s, &end, 10);
+  if (errno || *end != '\0' || v == 0)
+    throw std::runtime_error("invalid u64");
+  return (uint64_t)v;
+}
+
+// ---------------- RANDOM ----------------
+static inline uint32_t mix32(uint32_t x) {
+  x ^= x >> 16; x *= 0x7feb352dU;
+  x ^= x >> 15; x *= 0x846ca68bU;
+  x ^= x >> 16;
+  return x;
+}
+
+static void init_points(float* x, float* y, size_t n) {
+  for (size_t i = 0; i < n; ++i) {
+    uint32_t a = mix32((uint32_t)i);
+    uint32_t b = mix32((uint32_t)i ^ 0x9e3779b9);
+    x[i] = (a >> 8) * (1.0f / 16777216.0f);
+    y[i] = (b >> 8) * (1.0f / 16777216.0f);
+  }
+}
+
+// ---------------- ATOMIC DOUBLE ----------------
+__device__ double atomicAdd_double(double* addr, double val) {
+#if __CUDA_ARCH__ >= 600
+  return atomicAdd(addr, val);
+#else
+  unsigned long long* ull = (unsigned long long*)addr;
+  unsigned long long old = *ull, assumed;
+  do {
+    assumed = old;
+    double sum = __longlong_as_double(assumed) + val;
+    old = atomicCAS(ull, assumed, __double_as_longlong(sum));
+  } while (assumed != old);
+  return __longlong_as_double(old);
+#endif
+}
+
+__device__ float dist2(float x1, float y1, float x2, float y2) {
+  float dx = x1 - x2;
+  float dy = y1 - y2;
+  return dx * dx + dy * dy;
+}
+
+// ---------------- KERNEL ----------------
+__global__ void assign_accumulate(
+    const float* x,
+    const float* y,
+    size_t n,
+    const float* mx,
+    const float* my,
+    int k,
+    double* sx,
+    double* sy,
+    uint64_t* cnt)
+{
+  extern __shared__ unsigned char smem[];
+
+  double* s_sx = (double*)smem;
+  double* s_sy = s_sx + k;
+  uint64_t* s_cnt = (uint64_t*)(s_sy + k);
+
+  for (int c = threadIdx.x; c < k; c += blockDim.x) {
+    s_sx[c] = 0;
+    s_sy[c] = 0;
+    s_cnt[c] = 0;
+  }
+  __syncthreads();
+
+  for (size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+       i < n;
+       i += blockDim.x * gridDim.x)
+  {
+    float px = x[i], py = y[i];
+
+    float best = FLT_MAX;
+    int best_c = 0;
+
+    for (int c = 0; c < k; ++c) {
+      float d = dist2(px, py, mx[c], my[c]);
+      if (d < best) { best = d; best_c = c; }
+    }
+
+    atomicAdd_double(&s_sx[best_c], px);
+    atomicAdd_double(&s_sy[best_c], py);
+    atomicAdd((unsigned long long*)&s_cnt[best_c], 1ULL);
   }
 
   __syncthreads();
 
-  // Load once here.
-  const float x_value = data_x[global_index];
-  const float y_value = data_y[global_index];
-
-  float best_distance = FLT_MAX;
-  int best_cluster = -1;
-  for (int cluster = 0; cluster < k; ++cluster) {
-    const float distance = squared_l2_distance(x_value,
-                                               y_value,
-                                               shared_data[cluster],
-                                               shared_data[k + cluster]);
-    if (distance < best_distance) {
-      best_distance = distance;
-      best_cluster = cluster;
+  for (int c = threadIdx.x; c < k; c += blockDim.x) {
+    if (s_cnt[c]) {
+      atomicAdd_double(&sx[c], s_sx[c]);
+      atomicAdd_double(&sy[c], s_sy[c]);
+      atomicAdd((unsigned long long*)&cnt[c], s_cnt[c]);
     }
-  }
-
-  __syncthreads();
-
-  // reduction
-
-  const int x = local_index;
-  const int y = local_index + blockDim.x;
-  const int count = local_index + blockDim.x + blockDim.x;
-
-  for (int cluster = 0; cluster < k; ++cluster) {
-    shared_data[x] = (best_cluster == cluster) ? x_value : 0;
-    shared_data[y] = (best_cluster == cluster) ? y_value : 0;
-    shared_data[count] = (best_cluster == cluster) ? 1 : 0;
-    __syncthreads();
-
-    // Reduction for this cluster.
-    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-      if (local_index < stride) {
-        shared_data[x] += shared_data[x + stride];
-        shared_data[y] += shared_data[y + stride];
-        shared_data[count] += shared_data[count + stride];
-      }
-      __syncthreads();
-    }
-
-    // Now shared_data[0] holds the sum for x.
-
-    if (local_index == 0) {
-      const int cluster_index = blockIdx.x * k + cluster;
-      new_sums_x[cluster_index] = shared_data[x];
-      new_sums_y[cluster_index] = shared_data[y];
-      counts[cluster_index] = shared_data[count];
-    }
-    __syncthreads();
   }
 }
 
-__global__ void coarse_reduce(float* __restrict__ means_x,
-                              float* __restrict__ means_y,
-                              float* __restrict__ new_sum_x,
-                              float* __restrict__ new_sum_y,
-                              int k,
-                              int* __restrict__ counts) {
-  extern __shared__ float shared_data[];
+__global__ void update(float* mx, float* my,
+                       double* sx, double* sy,
+                       uint64_t* cnt, int k)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= k) return;
 
-  const int index = threadIdx.x;
-  const int y_offset = blockDim.x;
-
-  shared_data[index] = new_sum_x[index];
-  shared_data[y_offset + index] = new_sum_y[index];
-  __syncthreads();
-
-  for (int stride = blockDim.x / 2; stride >= k; stride /= 2) {
-    if (index < stride) {
-      shared_data[index] += shared_data[index + stride];
-      shared_data[y_offset + index] += shared_data[y_offset + index + stride];
-    }
-    __syncthreads();
-  }
-
-  if (index < k) {
-    const int count = max(1, counts[index]);
-    means_x[index] = new_sum_x[index] / count;
-    means_y[index] = new_sum_y[index] / count;
-    new_sum_y[index] = 0;
-    new_sum_x[index] = 0;
-    counts[index] = 0;
+  uint64_t c = cnt[i];
+  if (c > 0) {
+    mx[i] = sx[i] / (double)c;
+    my[i] = sy[i] / (double)c;
   }
 }
 
+__global__ void zero(double* sx, double* sy, uint64_t* cnt, int k) {
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < k) {
+    sx[i] = 0;
+    sy[i] = 0;
+    cnt[i] = 0;
+  }
+}
+
+// ---------------- MAIN ----------------
 int main(int argc, const char* argv[]) {
   if (argc < 4) {
-    std::cerr << "usage: k-means <data-file> <k> [iterations]" << std::endl;
-    std::exit(EXIT_FAILURE);
+    std::cerr << "usage: --random-n N k [iters] [tile_gib]\n";
+    return 1;
   }
 
-  const auto k = std::atoi(argv[3]);
-  const auto number_of_iterations = (argc == 5) ? std::atoi(argv[4]) : 300;
+  const std::string mode = argv[1];
+  size_t N = 0;
+  int k = 0;
+  int iters = 300;
+  uint64_t tile_gib = 1; // default tile size for x+y (GiB)
 
-  std::vector<float> h_x;
-  std::vector<float> h_y;
-  std::ifstream stream(argv[2]);
-  std::string line;
-  while (std::getline(stream, line)) {
-    std::istringstream line_stream(line);
-    float x, y;
-    uint16_t label;
-    line_stream >> x >> y >> label;
-    h_x.push_back(x);
-    h_y.push_back(y);
+  if (mode == "--random-gib") {
+    uint64_t gib_xy = std::stoull(argv[2]);
+    k = std::atoi(argv[3]);
+    if (argc >= 5) iters = std::atoi(argv[4]);
+    if (argc >= 6) tile_gib = std::stoull(argv[5]);
+
+    uint64_t bytes_xy = 0;
+    if (mul_overflow_u64(gib_xy, 1024ULL * 1024ULL * 1024ULL, &bytes_xy)) {
+      std::cerr << "error: GiB_xy too large (overflow)\n";
+      return EXIT_FAILURE;
+    }
+    // x+y = 2 floats = 8 bytes per point
+    N = (size_t)(bytes_xy / (2ULL * sizeof(float)));
+
+  } else if (mode == "--random-n") {
+    N = (size_t)std::stoull(argv[2]);
+    long double gib_xy = (long double)N * 2.0L * (long double)sizeof(float) /
+                       (1024.0L * 1024.0L * 1024.0L);
+                       std::cout << "size: " << gib_xy << "GiB"<< std::endl;
+    k = std::atoi(argv[3]);
+    if (argc >= 5) iters = std::atoi(argv[4]);
+    if (argc >= 6) tile_gib = std::stoull(argv[5]);
+  } else {
+    std::cerr << "error: unknown mode '" << mode << "'\n";
+    return EXIT_FAILURE;
   }
 
-  const size_t number_of_elements = h_x.size();
+  // ---------------- HOST PINNED ----------------
+  float *h_x, *h_y;
+  size_t bytes = 0;
+  if (mul_overflow_size(N, sizeof(float), &bytes))
+    throw std::overflow_error("host alloc overflow");
 
-  Data d_data(number_of_elements, h_x, h_y);
+  CUDA_CHECK(cudaMallocHost(&h_x, bytes));
+  CUDA_CHECK(cudaMallocHost(&h_y, bytes));
 
-  std::mt19937 rng(std::random_device{}());
-  std::shuffle(h_x.begin(), h_x.end(), rng);
-  std::shuffle(h_y.begin(), h_y.end(), rng);
-  Data d_means(k, h_x, h_y);
+  init_points(h_x, h_y, N);
 
-  const int threads = 1024;
-  const int blocks = (number_of_elements + threads - 1) / threads;
+  // ---------------- DEVICE ----------------
+  float *d_x, *d_y, *d_mx, *d_my;
+  double *d_sx, *d_sy;
+  uint64_t *d_cnt;
 
-  //std::cerr << "Processing " << number_of_elements << " points on " << blocks
-  //          << " blocks x " << threads << " threads" << std::endl;
+  CUDA_CHECK(cudaMalloc(&d_x, bytes));
+  CUDA_CHECK(cudaMalloc(&d_y, bytes));
+  CUDA_CHECK(cudaMalloc(&d_mx, k*sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_my, k*sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_sx, k*sizeof(double)));
+  CUDA_CHECK(cudaMalloc(&d_sy, k*sizeof(double)));
+  CUDA_CHECK(cudaMalloc(&d_cnt, k*sizeof(uint64_t)));
+  auto t0 = std::chrono::high_resolution_clock::now();
 
-  // * 3 for x, y and counts.
-  const int fine_shared_memory = 3 * threads * sizeof(float);
-  // * 2 for x and y. Will have k * blocks threads for the coarse reduction.
-  const int coarse_shared_memory = 2 * k * blocks * sizeof(float);
+  CUDA_CHECK(cudaMemcpy(d_x, h_x, bytes, cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_y, h_y, bytes, cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_mx, h_x, k*sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_my, h_y, k*sizeof(float), cudaMemcpyHostToDevice));
 
-  Data d_sums(k * blocks);
-  int* d_counts;
-  cudaMalloc(&d_counts, k * blocks * sizeof(int));
-  cudaMemset(d_counts, 0, k * blocks * sizeof(int));
+  // ---------------- TILE ----------------
+  uint64_t tile_bytes = 0;
+  mul_overflow_u64(tile_gib, 1024ULL*1024ULL*1024ULL, &tile_bytes);
+  size_t tile_pts = tile_bytes / (2*sizeof(float));
+  if (tile_pts == 0) tile_pts = 1;
+  if (tile_pts > N) tile_pts = N;
 
-  const auto start = std::chrono::high_resolution_clock::now();
+  int threads = 256;
+  int blocks = std::min((size_t)65535, div_ceil(tile_pts, (size_t)threads));
 
-  for (size_t iteration = 0; iteration < number_of_iterations; ++iteration) {
-    fine_reduce<<<blocks, threads, fine_shared_memory>>>(d_data.x,
-                                                         d_data.y,
-                                                         d_data.size,
-                                                         d_means.x,
-                                                         d_means.y,
-                                                         d_sums.x,
-                                                         d_sums.y,
-                                                         k,
-                                                         d_counts);
-    cudaDeviceSynchronize();
+  size_t shmem = 0;
+  size_t tmp1, tmp2;
+  mul_overflow_size(2*k, sizeof(double), &tmp1);
+  mul_overflow_size(k, sizeof(uint64_t), &tmp2);
+  shmem = tmp1 + tmp2;
+  cudaStream_t stream;
+  CUDA_CHECK(cudaStreamCreate(&stream));
 
-    coarse_reduce<<<1, k * blocks, coarse_shared_memory>>>(d_means.x,
-                                                           d_means.y,
-                                                           d_sums.x,
-                                                           d_sums.y,
-                                                           k,
-                                                           d_counts);
+  for (int it = 0; it < iters; ++it) {
 
-    cudaDeviceSynchronize();
+    zero<<<(k+255)/256,256, 0, stream>>>(d_sx,d_sy,d_cnt,k);
+
+    for (size_t base = 0; base < N; base += tile_pts) {
+      size_t n = std::min(tile_pts, N-base);
+
+      assign_accumulate<<<blocks,threads,shmem, stream>>>(
+        d_x+base, d_y+base, n,
+        d_mx, d_my, k,
+        d_sx, d_sy, d_cnt
+      );
+    }
+    {
+      update<<<(k+255)/256,256, 0, stream>>>(d_mx,d_my,d_sx,d_sy,d_cnt,k);
+    }
+    cudaStreamSynchronize(stream);
   }
 
-  const auto end = std::chrono::high_resolution_clock::now();
-  const auto duration =
-      std::chrono::duration_cast<std::chrono::duration<float>>(end - start);
-  std::cerr << "Standard CUDA implementation Took: " << duration.count() << "s" << " for "<<h_x.size()<<" points."<<std::endl;
+  CUDA_CHECK(cudaDeviceSynchronize());
 
-std_time_used = duration.count();
+  auto t1 = std::chrono::high_resolution_clock::now();
+  double secs = std::chrono::duration<double>(t1-t0).count();
 
-  cudaFree(d_counts);
+  std::cerr << "Time: " << secs << "s\n";
 
-  std::vector<float> mean_x(k, 0);
-  std::vector<float> mean_y(k, 0);
-  cudaMemcpy(mean_x.data(), d_means.x, d_means.bytes, cudaMemcpyDeviceToHost);
-  cudaMemcpy(mean_y.data(), d_means.y, d_means.bytes, cudaMemcpyDeviceToHost);
+  // cleanup
+  cudaFree(d_x); cudaFree(d_y);
+  cudaFree(d_mx); cudaFree(d_my);
+  cudaFree(d_sx); cudaFree(d_sy);
+  cudaFree(d_cnt);
+  cudaFreeHost(h_x); cudaFreeHost(h_y);
 
-  for (size_t cluster = 0; cluster < k; ++cluster) {
-    //std::cout << mean_x[cluster] << " " << mean_y[cluster] << std::endl;
-  }
-
-FILE *fp;
-  int i;
-
-  fp = fopen("Standardtimes.txt", "a");
-    fprintf(fp, "%0.6f\n", std_time_used);
-fclose(fp);
-
-	
-  std::string str(std::to_string(h_x.size())),str1,str2;
-  str = "results/standard/" + str;
-
-   
-  
-  str2 = str + "_centroids.txt";
-  fp = fopen(str2.c_str(), "w");
-  for(i = 0; i < k; ++i){
-    fprintf(fp, "%0.6f %0.6f\n", mean_x[i], mean_y[i]);
-  }
-  fclose(fp);
-
-
-
-
-
-
-
+  return 0;
 }

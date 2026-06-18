@@ -67,6 +67,6 @@ void upscale(const std::string& in_img, const std::string& in_lbl,
 int main() {
     upscale("data/train-images.idx3-ubyte", "data/train-labels.idx1-ubyte",
             "data/massive-images.idx3-ubyte", "data/massive-labels.idx1-ubyte", 
-            65);
+            70);
     return 0;
 }

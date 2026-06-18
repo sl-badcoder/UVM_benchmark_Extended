@@ -10,7 +10,7 @@
 #include <string>
 #include <chrono>
 
-//#define MEMADVISE
+#define MEMADVISE
 #define PREF
 
 #define CUDA_CHECK(call)                                                                 \
@@ -319,13 +319,6 @@ int main(int argc, const char* argv[]) {
   CUDA_CHECK(cudaMalloc(&d_sumy, (size_t)k * sizeof(double)));
   CUDA_CHECK(cudaMalloc(&d_cnt,  (size_t)k * sizeof(uint64_t)));
 
-  #ifdef MEMADVISE
-    CUDA_CHECK(cudaMemAdvise(d_data.x, d_data.size * sizeof(float), cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
-    CUDA_CHECK(cudaMemAdvise(d_data.y, d_data.size * sizeof(float), cudaMemAdviseSetAccessedBy, 0));
-    CUDA_CHECK(cudaMemAdvise(d_means.x, (size_t)k * sizeof(float), cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
-    CUDA_CHECK(cudaMemAdvise(d_means.y, (size_t)k * sizeof(float), cudaMemAdviseSetAccessedBy, 0));
-  #endif
-
 
   auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -357,21 +350,6 @@ int main(int argc, const char* argv[]) {
   CUDA_CHECK(cudaStreamCreate(&stream));
   size_t free_m1, total_m, free_m2, free_m3, free_m4;
 
-
-    #ifdef PREF
-    int iter =0;
-    // Prefetch tile to GPU for better UM behavior; safe even if already resident.
-    if(iter == 0)cudaMemGetInfo(&free_m1, &total_m);
-    // Prefetch means and accumulators (tiny)
-    CUDA_CHECK(cudaMemPrefetchAsync(d_data.x, min(d_data.size * sizeof(float), free_m1), device, stream));
-    if(iter == 0)cudaMemGetInfo(&free_m2, &total_m);
-    CUDA_CHECK(cudaMemPrefetchAsync(d_data.y, min(d_data.size * sizeof(float), free_m2), device, stream));
-    if(iter == 0)cudaMemGetInfo(&free_m3, &total_m);
-    CUDA_CHECK(cudaMemPrefetchAsync(d_means.x, min((size_t)k * sizeof(float), free_m3), device, stream));
-    if(iter == 0)cudaMemGetInfo(&free_m4, &total_m);
-    CUDA_CHECK(cudaMemPrefetchAsync(d_means.y, min((size_t)k * sizeof(float), free_m4), device, stream));
-    CUDA_CHECK(cudaStreamSynchronize(stream));
-    #endif
 
   for (int iter = 0; iter < iters; ++iter) {
 
