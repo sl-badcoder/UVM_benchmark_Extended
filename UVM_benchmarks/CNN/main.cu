@@ -4,6 +4,8 @@
 #include "mnist.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <cuda.h>
 #include <time.h>
 #include <chrono>
@@ -23,6 +25,9 @@ static unsigned int classify(double data[28][28]);
 static void test();
 static double forward_pass(double* device_data_ptr);
 static double back_pass();
+static unsigned int parse_limit(const char *value, const char *name, unsigned int current);
+static unsigned long long parse_gib_arg(const char *value);
+static void load_synthetic_gib(unsigned long long gib);
 __global__ void k_NormalizeAndCast(double* incoming, float* outgoing, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
@@ -47,7 +52,27 @@ int main(int argc, const char **argv) {
     return 1;
   }
 
-  loaddata();
+  if (argc > 1 && strcmp(argv[1], "--synthetic-gib") == 0) {
+    if (argc != 3) {
+      fprintf(stderr, "Usage: %s --synthetic-gib <GiB>\n", argv[0]);
+      return 1;
+    }
+    load_synthetic_gib(parse_gib_arg(argv[2]));
+  } else {
+    loaddata();
+  }
+
+  if (argc > 1 && strcmp(argv[1], "--synthetic-gib") != 0) {
+    train_cnt = parse_limit(argv[1], "train_limit", train_cnt);
+  }
+  if (argc > 2 && strcmp(argv[1], "--synthetic-gib") != 0) {
+    test_cnt = parse_limit(argv[2], "test_limit", test_cnt);
+  }
+  if (argc > 3 && strcmp(argv[1], "--synthetic-gib") != 0) {
+    fprintf(stderr, "Usage: %s [train_limit] [test_limit]\n       %s --synthetic-gib <GiB>\n", argv[0], argv[0]);
+    return 1;
+  }
+
   int deviceId = 0;
   cudaGetDevice(&deviceId);
   size_t free_m, total_m;
@@ -73,6 +98,63 @@ int main(int argc, const char **argv) {
   cudaDeviceSynchronize();
 
   return 0;
+}
+
+static unsigned int parse_limit(const char *value, const char *name, unsigned int current) {
+  char *end = NULL;
+  unsigned long parsed = strtoul(value, &end, 10);
+  if (end == value || *end != '\0') {
+    fprintf(stderr, "Invalid %s: %s\n", name, value);
+    exit(EXIT_FAILURE);
+  }
+  if (parsed == 0 || parsed > current) {
+    return current;
+  }
+  return (unsigned int)parsed;
+}
+
+static unsigned long long parse_gib_arg(const char *value) {
+  char *end = NULL;
+  unsigned long long parsed = strtoull(value, &end, 10);
+  if (end == value || *end != '\0' || parsed == 0) {
+    fprintf(stderr, "Invalid GiB value: %s\n", value);
+    exit(EXIT_FAILURE);
+  }
+  return parsed;
+}
+
+static void load_synthetic_gib(unsigned long long gib) {
+  const unsigned long long bytes_per_gib = 1024ULL * 1024ULL * 1024ULL;
+  if (gib > 0xffffffffffffffffULL / bytes_per_gib) {
+    fprintf(stderr, "Synthetic CNN GiB value is too large\n");
+    exit(EXIT_FAILURE);
+  }
+  unsigned long long target_bytes = gib * bytes_per_gib;
+  unsigned long long records = target_bytes / sizeof(mnist_data);
+  if (records == 0 || records > 0xffffffffULL) {
+    fprintf(stderr, "Synthetic CNN size is outside supported record count range\n");
+    exit(EXIT_FAILURE);
+  }
+
+  train_cnt = (unsigned int)records;
+  test_cnt = 1;
+
+  cudaError_t err = cudaMallocManaged(&train_set, sizeof(mnist_data) * (size_t)train_cnt, cudaMemAttachGlobal);
+  if (err != cudaSuccess) {
+    fprintf(stderr, "CUDA Malloc train_set failed: %s\n", cudaGetErrorString(err));
+    exit(EXIT_FAILURE);
+  }
+  err = cudaMallocManaged(&test_set, sizeof(mnist_data) * (size_t)test_cnt, cudaMemAttachGlobal);
+  if (err != cudaSuccess) {
+    fprintf(stderr, "CUDA Malloc test_set failed: %s\n", cudaGetErrorString(err));
+    exit(EXIT_FAILURE);
+  }
+
+  cudaMemset(train_set, 0, sizeof(mnist_data) * (size_t)train_cnt);
+  cudaMemset(test_set, 0, sizeof(mnist_data) * (size_t)test_cnt);
+  cudaDeviceSynchronize();
+  printf("Synthetic data loading done: %u train records, %u test records, requested %llu GiB\n",
+         train_cnt, test_cnt, gib);
 }
 
 // Forward propagation of a single row in dataset

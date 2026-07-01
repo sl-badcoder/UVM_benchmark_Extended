@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cerrno>
 #include <cuda.h>
 
 #define ZERO
@@ -131,6 +132,18 @@ void GPU_argv_init()
 	return;
 }
 
+static index_t parse_index_arg(const char* value, const char* name)
+{
+	errno = 0;
+	char* end = NULL;
+	unsigned long long parsed = strtoull(value, &end, 10);
+	if (errno != 0 || end == value || *end != '\0' || parsed == 0) {
+		fprintf(stderr, "Invalid %s: %s\n", name, value);
+		exit(EXIT_FAILURE);
+	}
+	return (index_t)parsed;
+}
+
 
 __global__ void gramschmidt_kernel1(DATA_TYPE *a, DATA_TYPE *r, DATA_TYPE *q, index_t M, index_t N, index_t k)
 {
@@ -214,8 +227,19 @@ int main(int argc, char *argv[])
 
 	index_t M = 49000;
 	index_t N = 49000;
+	if (argc == 3) {
+		M = parse_index_arg(argv[1], "M");
+		N = parse_index_arg(argv[2], "N");
+	} else if (argc != 1) {
+		fprintf(stderr, "Usage: %s [M N]\n", argv[0]);
+		return 1;
+	}
 
 	size_t elems = (size_t)M * (size_t)N;
+	if (N != 0 && elems / N != M) {
+		fprintf(stderr, "M * N overflows size_t\n");
+		return 1;
+	}
 	size_t bytes = elems * sizeof(DATA_TYPE);
 
 	DATA_TYPE* A = (DATA_TYPE*)malloc(bytes);
@@ -283,4 +307,3 @@ int main(int argc, char *argv[])
 
     	return 0;
 }
-
