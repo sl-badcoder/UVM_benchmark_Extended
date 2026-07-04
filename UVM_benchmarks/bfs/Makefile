@@ -5,7 +5,7 @@ CXX := /usr/bin/g++
 CC := /usr/bin/gcc
 CCPATH := gcc
 
-NVCC  := /bin/nvcc -ccbin $(CCPATH)
+NVCC  := /usr/local/cuda/bin/nvcc -ccbin $(CCPATH)
 LINK := $(NVCC)
 
 INCLUDES := -I. -Iinclude

@@ -23,7 +23,7 @@
 #include <cuda.h>
 
 #define ZERO
-//#define PREF
+#define PREF
 
 using index_t = size_t;
 typedef float DATA_TYPE;

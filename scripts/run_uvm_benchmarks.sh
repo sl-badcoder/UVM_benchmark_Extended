@@ -160,7 +160,7 @@ compile_kmeans() {
 }
 
 compile_cnn() {
-  make all CC="${CUDA_DIR:-/usr/local/cuda-10.2}/bin/nvcc"
+  make all CC="${CUDA_DIR:-/usr/local/cuda-12.8}/bin/nvcc"
 }
 
 compile_pathfinder() {
@@ -232,7 +232,7 @@ run_kmeans_gib() {
 
   run_step "kmeans" "$size" "$repeat" "$workdir" compile_kmeans || return 0
   run_command "kmeans" "$size" "$repeat" "$workdir" \
-    ./kmeans_standard --random-gib "$gib" "$KMEANS_K" "$KMEANS_ITERS" "$KMEANS_TILE_GIB"
+    ./kmeans_standard --random-gib "$gib" "$KMEANS_K" "$KMEANS_ITERS" "$gib"
 }
 
 run_cnn() {

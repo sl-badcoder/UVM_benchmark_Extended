@@ -2,6 +2,7 @@
 #define MNIST_DOUBLE
 #include "layer.h"
 #include "mnist.h"
+#include <iostream>
 
 #include <cstdio>
 #include <cstdlib>
@@ -10,6 +11,8 @@
 #include <time.h>
 #include <chrono>
 #define PREFETCH_SIZE 1900000
+//#define ADVISE
+//#define PREFETCH
 
 static mnist_data *train_set, *test_set;
 static unsigned int train_cnt, test_cnt;
@@ -81,19 +84,25 @@ int main(int argc, const char **argv) {
   size_t total_train_size = (sizeof(mnist_data) * (size_t)train_cnt);
   size_t sz = total_train_size / (1024.0 * 1024.0 * 1024.0);
   printf("Traininng Set Size: %lluGiB\n", sz);
-  //cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
-  //cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetAccessedBy, 0);
-  cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetReadMostly, 0);
+#ifdef ADVISE
+  cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
+  cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetAccessedBy, 0);
+#endif
+  //cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetReadMostly, 0);
   printf("free: %llu", total_train_size % free_m);
-  cudaMemPrefetchAsync(train_set, total_train_size % free_m, deviceId, NULL);
-  //cudaMemPrefetchAsync(train_set, sizeof(mnist_data) * PREFETCH_SIZE * 100, 0, 0);
+  cudaDeviceSynchronize();
+  cudaMemGetInfo(&free_m, &total_m);
+#ifdef PREFETCH
+  cudaMemPrefetchAsync(train_set, std::min(total_train_size, (size_t)(free_m * 0.8)), deviceId, NULL);
+#endif
+  std::cout << "prefetched train set" << std::endl;
 
   cudaDeviceSynchronize();
   learn();
   cudaMemGetInfo(&free_m, &total_m);
 
   size_t total_test_size = (sizeof(mnist_data) * (size_t)test_cnt) % free_m;
-  cudaMemPrefetchAsync(train_set, total_test_size, deviceId, NULL);
+  //cudaMemPrefetchAsync(train_set, total_test_size, deviceId, NULL);
   test();
   cudaDeviceSynchronize();
 
@@ -150,8 +159,8 @@ static void load_synthetic_gib(unsigned long long gib) {
     exit(EXIT_FAILURE);
   }
 
-  cudaMemset(train_set, 0, sizeof(mnist_data) * (size_t)train_cnt);
-  cudaMemset(test_set, 0, sizeof(mnist_data) * (size_t)test_cnt);
+  std::memset(train_set, 0, sizeof(mnist_data) * (size_t)train_cnt);
+  std::memset(test_set, 0, sizeof(mnist_data) * (size_t)test_cnt);
   cudaDeviceSynchronize();
   printf("Synthetic data loading done: %u train records, %u test records, requested %llu GiB\n",
          train_cnt, test_cnt, gib);
@@ -262,7 +271,7 @@ static void learn() {
     for (int i = 0; i < train_cnt; ++i) {
       if(i > (12083159296 / (sizeof(mnist_data))) && i% PREFETCH_SIZE){
         //printf("prefetching...\n");
-        cudaMemPrefetchAsync(train_set + i + PREFETCH_SIZE, sizeof(mnist_data) * PREFETCH_SIZE, 0, 0);
+        //cudaMemPrefetchAsync(train_set + i + PREFETCH_SIZE, sizeof(mnist_data) * PREFETCH_SIZE, 0, 0);
       }
       if (i % 500 == 0 || i == train_cnt - 1) {
         auto now = std::chrono::high_resolution_clock::now();

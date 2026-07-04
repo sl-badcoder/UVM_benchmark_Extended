@@ -17,7 +17,7 @@
 
 //#define BENCH_PRINT
 #define PREF
-#define MEMADVISE
+//#define MEMADVISE
 
 using std::cout;
 using std::endl;

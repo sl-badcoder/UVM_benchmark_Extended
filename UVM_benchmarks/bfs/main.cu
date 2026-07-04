@@ -77,14 +77,16 @@ void initCuda(Graph &G) {
     // checkError(cudaMemcpy(d_edgesOffset, G.edgesOffset.data(), G.numVertices * sizeof(int), cudaMemcpyHostToDevice));
     // checkError(cudaMemcpy(d_edgesSize, G.edgesSize.data(), G.numVertices * sizeof(int), cudaMemcpyHostToDevice ));
     //also add prefetching: - need to be sure that we dont prefetch too much
-    // int max_size = 15 * 1024 * 1024 * 1024;
-    // int actual_prefetch = 0;
-    // actual_prefetch += G.numEdges * sizeof(int);
-    // if(actual_prefetch < max_size) checkError(cudaMemPrefetchAsync(u_adjacencyList, G.numEdges * sizeof(int), 0, 0));
-    // actual_prefetch += G.numVertices * sizeof(int);
-    // if(actual_prefetch < max_size)checkError(cudaMemPrefetchAsync(u_edgesOffset, G.numVertices * sizeof(size_t), 0, 0));
-    // actual_prefetch += G.numVertices * sizeof(int);
-    // if(actual_prefetch < max_size)checkError(cudaMemPrefetchAsync(u_edgesSize, G.numVertices * sizeof(size_t), 0, 0));
+    int device = 0;
+    checkError(cudaMemPrefetchAsync(u_adjacencyList, G.numEdges * sizeof(int), device));
+    checkError(cudaMemPrefetchAsync(u_edgesOffset, G.numVertices * sizeof(size_t), device));
+    checkError(cudaMemPrefetchAsync(u_edgesSize, G.numVertices * sizeof(size_t), device));
+    checkError(cudaMemPrefetchAsync(u_distance, G.numVertices * sizeof(int), device));
+    checkError(cudaMemPrefetchAsync(u_parent, G.numVertices * sizeof(size_t), device));
+    checkError(cudaMemPrefetchAsync(u_currentQueue, G.numVertices * sizeof(int), device));
+    checkError(cudaMemPrefetchAsync(u_nextQueue, G.numVertices * sizeof(int), device));
+    checkError(cudaMemPrefetchAsync(u_degrees, G.numVertices * sizeof(int), device));
+    
     
     cudaDeviceSynchronize();
 }
@@ -130,11 +132,11 @@ void initializeCudaBfs(int startVertex, std::vector<int> &distance, std::vector<
 
     memcpy(u_distance, distance.data(), G.numVertices * sizeof(int));
     memcpy(u_parent,   parent.data(),   G.numVertices * sizeof(size_t));
-    // int dev; cudaGetDevice(&dev);
-    // cudaMemPrefetchAsync(u_distance,    G.numVertices*sizeof(int), dev);
-    // cudaMemPrefetchAsync(u_parent,      G.numVertices*sizeof(int), dev);
-    // cudaMemPrefetchAsync(u_currentQueue,G.numVertices*sizeof(int), dev);
-    // cudaDeviceSynchronize();
+    int dev; cudaGetDevice(&dev);
+    cudaMemPrefetchAsync(u_distance,    G.numVertices*sizeof(int), dev);
+    cudaMemPrefetchAsync(u_parent,      G.numVertices*sizeof(int), dev);
+    cudaMemPrefetchAsync(u_currentQueue,G.numVertices*sizeof(int), dev);
+    cudaDeviceSynchronize();
     int firstElementQueue = startVertex;
     *u_currentQueue = firstElementQueue;
 }

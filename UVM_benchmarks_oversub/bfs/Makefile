@@ -1,4 +1,4 @@
-CUDA_INSTALL_PATH ?= /usr/local/cuda-10.2/
+CUDA_INSTALL_PATH ?= /usr/local/cuda/
 GCC_VER = -5
 
 CXX := /usr/bin/g++
