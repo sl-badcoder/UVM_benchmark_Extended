@@ -16,7 +16,7 @@
 #define HALO 1 // halo width along one direction when advancing to the next iteration
 
 //#define BENCH_PRINT
-#define PREF
+//#define PREF
 //#define MEMADVISE
 
 using std::cout;

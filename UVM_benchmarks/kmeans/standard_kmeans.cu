@@ -11,7 +11,7 @@
 #include <chrono>
 
 //#define MEMADVISE
-#define PREF
+//#define PREF
 
 #define CUDA_CHECK(call)                                                                 \
   do {                                                                                   \

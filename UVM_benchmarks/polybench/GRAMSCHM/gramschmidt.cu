@@ -22,8 +22,8 @@
 #include <cerrno>
 #include <cuda.h>
 
-#define ZERO
-#define PREF
+//#define PREF
+//#define MEMADVISE
 
 using index_t = size_t;
 typedef float DATA_TYPE;
@@ -270,7 +270,7 @@ int main(int argc, char *argv[])
 	}
 	init_array(A, A_gpu, M, N);
 
-#ifdef ZERO
+#ifdef MEMADVISE
 	(cudaMemAdvise(A_gpu, bytes, cudaMemAdviseSetAccessedBy, 0));
 	(cudaMemAdvise(A_gpu, bytes, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
 	(cudaMemAdvise(R_gpu, bytes, cudaMemAdviseSetAccessedBy, 0));

@@ -11,8 +11,8 @@
 #include <time.h>
 #include <chrono>
 #define PREFETCH_SIZE 1900000
-//#define ADVISE
-//#define PREFETCH
+//#define MEMADVISE
+//#define PREF
 
 static mnist_data *train_set, *test_set;
 static unsigned int train_cnt, test_cnt;
@@ -84,7 +84,7 @@ int main(int argc, const char **argv) {
   size_t total_train_size = (sizeof(mnist_data) * (size_t)train_cnt);
   size_t sz = total_train_size / (1024.0 * 1024.0 * 1024.0);
   printf("Traininng Set Size: %lluGiB\n", sz);
-#ifdef ADVISE
+#ifdef MEMADVISE
   cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
   cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetAccessedBy, 0);
 #endif
@@ -92,7 +92,7 @@ int main(int argc, const char **argv) {
   printf("free: %llu", total_train_size % free_m);
   cudaDeviceSynchronize();
   cudaMemGetInfo(&free_m, &total_m);
-#ifdef PREFETCH
+#ifdef PREF
   cudaMemPrefetchAsync(train_set, std::min(total_train_size, (size_t)(free_m * 0.8)), deviceId, NULL);
 #endif
   std::cout << "prefetched train set" << std::endl;

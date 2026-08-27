@@ -1,7 +1,7 @@
 #include "layer.h"
 #include <iostream>
-//#define ADVISE
-//#define PREFETCH
+//#define MEMADVISE
+//#define PREF
 // Constructor
 Layer::Layer(int M, int N, int O) {
   this->M = M;
@@ -47,7 +47,7 @@ Layer::Layer(int M, int N, int O) {
   // cudaMemcpyHostToDevice);
   // memcpy(weight, h_weight, sizeof(float) * M * N);
   
-#ifdef ADVISE
+#ifdef MEMADVISE
   cudaMemAdvise(output, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
   cudaMemAdvise(output, sizeof(float) * O, cudaMemAdviseSetAccessedBy, 0);
   cudaMemAdvise(preact, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
@@ -66,7 +66,7 @@ Layer::Layer(int M, int N, int O) {
   cudaMemAdvise(d_weight, sizeof(float) * M * N, cudaMemAdviseSetAccessedBy, 0);
 #endif
   // prefetching the world
-#ifdef PREFETCH
+#ifdef PREF
   size_t free_m, total_m;
   cudaMemGetInfo(&free_m, &total_m);
   cudaMemPrefetchAsync(output, std::min(sizeof(float) * O, free_m), 0, stream);
