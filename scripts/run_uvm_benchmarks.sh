@@ -30,7 +30,7 @@ Options:
       --benchmarks LIST           Comma list: kmeans,cnn,pathfinder,gramschm
       --gb-sizes LIST             Comma list of target GiB sizes for every benchmark.
                                   Suffixes GB/GiB are accepted. Example: 24GB,48GB,72GB,96GB
-      --kmeans-sizes LIST         Comma list of point counts. Example: 500000,1000000
+      --kmeans-sizes LIST         Legacy option; not used by kmeans_standard-only mode.
       --cnn-sizes LIST            Comma list of train[:test] limits. 0 means full loaded dataset.
                                   Example: 1000:100,5000:1000
       --pathfinder-sizes LIST     Comma list of cols:rows:pyramid. Example: 100000:100:20
@@ -47,7 +47,7 @@ PATHFINDER_SIZES, GRAMSCHM_SIZES, KMEANS_K, KMEANS_ITERS, KMEANS_TILE_GIB,
 PATHFINDER_ROWS, PATHFINDER_PYRAMID, KEEP_GOING, FEATURE_CONFIGS.
 
 GB mode conversion rules:
-  kmeans    -> kmeans_standard --random-gib <GiB> using x+y managed data size
+  kmeans    -> ONLY kmeans_standard --random-gib <GiB> using x+y managed data size
   cnn       -> CNN --synthetic-gib <GiB> using synthetic managed training data
   pathfinder-> cols derived from <GiB> / (PATHFINDER_ROWS * sizeof(int))
   gramschm  -> square M:N derived from <GiB> / (3 managed float arrays)
@@ -256,7 +256,10 @@ make_with_feature_flags() {
 }
 
 compile_kmeans() {
-  make_with_feature_flags all
+  # Build only the implementation used by this runner.  Using `make all`
+  # also builds kmeans_cuda, which is intentionally not part of these runs
+  # and can fail before kmeans_standard is built.
+  make_with_feature_flags kmeans_standard
 }
 
 compile_cnn() {
@@ -312,16 +315,12 @@ pathfinder_size_for_gib() {
 run_kmeans() {
   local size="$1"
   local repeat="$2"
-  local workdir="$BENCH_ROOT/kmeans"
-  local data_file="../../data/kmeans/${size}_points.txt"
+  : "$repeat"  # retained for a clear error if legacy point-count mode is selected
 
-  if [[ ! -f "$workdir/$data_file" ]]; then
-    echo "Missing kmeans data file: $workdir/$data_file" >&2
-    exit 1
-  fi
-  mkdir -p "$workdir/result/cuda"
-  run_step "kmeans" "$size" "$repeat" "$workdir" compile_kmeans || return 0
-  run_command "kmeans" "$size" "$repeat" "$workdir" ./kmeans_cuda 2 "$data_file" "$size"
+  echo "kmeans is configured to run ONLY ./kmeans_standard." >&2
+  echo "Point-count mode (--kmeans-sizes, requested size: $size) would previously run ./kmeans_cuda and is now disabled." >&2
+  echo "Use --gb-sizes <LIST> for kmeans_standard, e.g. --gb-sizes 24GB,48GB." >&2
+  exit 2
 }
 
 run_kmeans_gib() {
@@ -331,6 +330,10 @@ run_kmeans_gib() {
   local size="${gib}GiB"
 
   run_step "kmeans" "$size" "$repeat" "$workdir" compile_kmeans || return 0
+  if [[ ! -x "$workdir/kmeans_standard" ]]; then
+    echo "Expected kmeans standard binary not found or not executable: $workdir/kmeans_standard" >&2
+    exit 1
+  fi
   run_command "kmeans" "$size" "$repeat" "$workdir" \
     ./kmeans_standard --random-gib "$gib" "$KMEANS_K" "$KMEANS_ITERS" "$gib"
 }

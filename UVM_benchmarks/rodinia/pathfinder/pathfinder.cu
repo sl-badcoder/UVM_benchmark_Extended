@@ -195,6 +195,7 @@ int calc_path(int *gpuWall, int *gpuResult[2], size_t rows, size_t cols,
     size_t total_elements = rows * cols;
 
 #ifdef PREF
+    auto start = high_resolution_clock::now();
 
     cudaStream_t stream1, stream2, stream3, stream4;
     checkCuda(cudaStreamCreate(&stream1), "cudaStreamCreate(stream1)");
@@ -218,7 +219,6 @@ int calc_path(int *gpuWall, int *gpuResult[2], size_t rows, size_t cols,
     dim3 dimBlock(BLOCK_SIZE);
     dim3 dimGrid(blockCols);
 
-    auto start = high_resolution_clock::now();
 
     int src = 1, dst = 0;
     for (int t = 0; t < (int)rows - 1; t += pyramid_height) {
