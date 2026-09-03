@@ -291,13 +291,6 @@ int main(int argc, char *argv[])
 	GPU_argv_init();
 	gramschmidtCuda(A_gpu, R_gpu, Q_gpu, M, N);
 	
-	t_start = rtclock();
-	gramschmidt(A, R, Q, M, N);
-	t_end = rtclock();
-
-	fprintf(stdout, "CPU Runtime: %0.6lfs\n", t_end - t_start);
-	
-	compareResults(A, A_gpu, M, N);	
 	free(A);
 	free(R);
 	free(Q);  
