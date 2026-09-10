@@ -106,7 +106,8 @@ int main(int argc, const char **argv) {
   CHECK_CUDA(cudaMemPrefetchAsync(train_set, std::min(total_train_size, (size_t)(free_m * 0.8)), deviceId, NULL));
   CHECK_CUDA(cudaGetLastError());
 #endif
-  std::cout << "prefetched train set" << std::endl;
+  cudaMemGetInfo(&free_m, &total_m);
+  std::cout << "prefetched train set: " << free_m << std::endl;
 
   cudaDeviceSynchronize();
   learn();
