@@ -63,7 +63,7 @@ Layer::Layer(int M, int N, int O) {
   // cudaMemcpyHostToDevice);
   // memcpy(weight, h_weight, sizeof(float) * M * N);
 #ifdef MEMADVISE
-  CHECK_CUDA(cudaMemAdvise(output, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, location));
+  CHECK_CUDA(cudaMemAdvise(output, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
   CHECK_CUDA(cudaMemAdvise(preact, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
   if(N>0){
     CHECK_CUDA(cudaMemAdvise(bias, sizeof(float) * N, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
