@@ -14,6 +14,15 @@
 //#define MEMADVISE
 //#define PREF
 
+#define CHECK_CUDA(call) do {                                         \
+  cudaError_t _e = (call);                                            \
+  if (_e != cudaSuccess) {                                            \
+    fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__,     \
+            cudaGetErrorString(_e));                                  \
+    exit(1);                                                          \
+  }                                                                   \
+} while (0)
+
 static mnist_data *train_set, *test_set;
 static unsigned int train_cnt, test_cnt;
 
@@ -85,16 +94,17 @@ int main(int argc, const char **argv) {
   size_t sz = total_train_size / (1024.0 * 1024.0 * 1024.0);
   printf("Traininng Set Size: %lluGiB\n", sz);
 #ifdef MEMADVISE
-  cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
-  cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetAccessedBy, deviceId);
+  CHECK_CUDA(cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
+  CHECK_CUDA(cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetAccessedBy, deviceId));
 #endif
   //cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetReadMostly, 0);
   printf("free: %llu", total_train_size % free_m);
   cudaDeviceSynchronize();
-  cudaMemGetInfo(&free_m, &total_m);
+  CHECK_CUDA(cudaMemGetInfo(&free_m, &total_m));
 #ifdef PREF
   std::cout << "free size: " << free_m << std::endl;
-  cudaMemPrefetchAsync(train_set, std::min(total_train_size, (size_t)(free_m * 0.8)), deviceId, NULL);
+  CHECK_CUDA(cudaMemPrefetchAsync(train_set, std::min(total_train_size, (size_t)(free_m * 0.8)), deviceId, NULL));
+  CHECK_CUDA(cudaGetLastError());
 #endif
   std::cout << "prefetched train set" << std::endl;
 
