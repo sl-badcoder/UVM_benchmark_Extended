@@ -95,7 +95,6 @@ int main(int argc, const char **argv) {
   printf("Traininng Set Size: %lluGiB\n", sz);
 #ifdef MEMADVISE
   CHECK_CUDA(cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
-  CHECK_CUDA(cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetAccessedBy, deviceId));
 #endif
   //cudaMemAdvise(train_set, total_train_size, cudaMemAdviseSetReadMostly, 0);
   printf("free: %llu", total_train_size % free_m);

@@ -62,26 +62,18 @@ Layer::Layer(int M, int N, int O) {
   // cudaMemcpy(weight, h_weight, sizeof(float) * M * N,
   // cudaMemcpyHostToDevice);
   // memcpy(weight, h_weight, sizeof(float) * M * N);
-  
 #ifdef MEMADVISE
-  CHECK_CUDA(cudaMemAdvise(output, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
-  CHECK_CUDA(cudaMemAdvise(output, sizeof(float) * O, cudaMemAdviseSetAccessedBy, deviceId));
+  CHECK_CUDA(cudaMemAdvise(output, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, location));
   CHECK_CUDA(cudaMemAdvise(preact, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
-  CHECK_CUDA(cudaMemAdvise(preact, sizeof(float) * O, cudaMemAdviseSetAccessedBy, deviceId));
   if(N>0){
     CHECK_CUDA(cudaMemAdvise(bias, sizeof(float) * N, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
-    CHECK_CUDA(cudaMemAdvise(bias, sizeof(float) * N, cudaMemAdviseSetAccessedBy, deviceId));
 
     CHECK_CUDA(cudaMemAdvise(weight, sizeof(float) * M * N, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
-    CHECK_CUDA(cudaMemAdvise(weight, sizeof(float) * M * N, cudaMemAdviseSetAccessedBy, deviceId));
     CHECK_CUDA(cudaMemAdvise(d_weight, sizeof(float) * M * N, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
-    CHECK_CUDA(cudaMemAdvise(d_weight, sizeof(float) * M * N, cudaMemAdviseSetAccessedBy, deviceId));
   }
 
   CHECK_CUDA(cudaMemAdvise(d_output, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
-  CHECK_CUDA(cudaMemAdvise(d_output, sizeof(float) * O, cudaMemAdviseSetAccessedBy, deviceId));
   CHECK_CUDA(cudaMemAdvise(d_preact, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
-  CHECK_CUDA(cudaMemAdvise(d_preact, sizeof(float) * O, cudaMemAdviseSetAccessedBy, deviceId));
   cudaDeviceSynchronize();
 #endif
   // prefetching the world
