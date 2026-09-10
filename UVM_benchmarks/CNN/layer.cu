@@ -4,6 +4,10 @@
 //#define PREF
 // Constructor
 Layer::Layer(int M, int N, int O) {
+#if defined(MEMADVISE) || defined(PREF)
+  int deviceId;
+  cudaGetDevice(&deviceId);
+#endif
   this->M = M;
   this->N = N;
   this->O = O;
@@ -49,47 +53,47 @@ Layer::Layer(int M, int N, int O) {
   
 #ifdef MEMADVISE
   cudaMemAdvise(output, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
-  cudaMemAdvise(output, sizeof(float) * O, cudaMemAdviseSetAccessedBy, 0);
+  cudaMemAdvise(output, sizeof(float) * O, cudaMemAdviseSetAccessedBy, deviceId);
   cudaMemAdvise(preact, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
-  cudaMemAdvise(preact, sizeof(float) * O, cudaMemAdviseSetAccessedBy, 0);
+  cudaMemAdvise(preact, sizeof(float) * O, cudaMemAdviseSetAccessedBy, deviceId);
   cudaMemAdvise(bias, sizeof(float) * N, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
-  cudaMemAdvise(bias, sizeof(float) * N, cudaMemAdviseSetAccessedBy, 0);
+  cudaMemAdvise(bias, sizeof(float) * N, cudaMemAdviseSetAccessedBy, deviceId);
 
   cudaMemAdvise(weight, sizeof(float) * M * N, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
-  cudaMemAdvise(weight, sizeof(float) * M * N, cudaMemAdviseSetAccessedBy, 0);
+  cudaMemAdvise(weight, sizeof(float) * M * N, cudaMemAdviseSetAccessedBy, deviceId);
 
   cudaMemAdvise(d_output, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
-  cudaMemAdvise(d_output, sizeof(float) * O, cudaMemAdviseSetAccessedBy, 0);
+  cudaMemAdvise(d_output, sizeof(float) * O, cudaMemAdviseSetAccessedBy, deviceId);
   cudaMemAdvise(d_preact, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
-  cudaMemAdvise(d_preact, sizeof(float) * O, cudaMemAdviseSetAccessedBy, 0);
+  cudaMemAdvise(d_preact, sizeof(float) * O, cudaMemAdviseSetAccessedBy, deviceId);
   cudaMemAdvise(d_weight, sizeof(float) * M * N, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId);
-  cudaMemAdvise(d_weight, sizeof(float) * M * N, cudaMemAdviseSetAccessedBy, 0);
+  cudaMemAdvise(d_weight, sizeof(float) * M * N, cudaMemAdviseSetAccessedBy, deviceId);
 #endif
   // prefetching the world
 #ifdef PREF
   size_t free_m, total_m;
   cudaMemGetInfo(&free_m, &total_m);
   std::cout << "free size output: " << free_m << std::endl;
-  cudaMemPrefetchAsync(output, std::min(sizeof(float) * O, free_m), 0, stream);
+  cudaMemPrefetchAsync(output, std::min(sizeof(float) * O, free_m), deviceId, stream);
   cudaMemGetInfo(&free_m, &total_m);
   std::cout << "free size preact: " << free_m << std::endl;
-  cudaMemPrefetchAsync(preact, std::min(sizeof(float) * O, free_m), 0, stream);
+  cudaMemPrefetchAsync(preact, std::min(sizeof(float) * O, free_m), deviceId, stream);
   cudaMemGetInfo(&free_m, &total_m);
   std::cout << "free size bias: " << free_m << std::endl;
-  cudaMemPrefetchAsync(bias, std::min(sizeof(float) * N, free_m), 0, stream);
+  cudaMemPrefetchAsync(bias, std::min(sizeof(float) * N, free_m), deviceId, stream);
   cudaMemGetInfo(&free_m, &total_m);
     std::cout << "free size weight: " << free_m << std::endl;
-  cudaMemPrefetchAsync(weight, std::min(sizeof(float) * M * N, free_m), 0, stream);
-  //cudaMemAdvise(weight, sizeof(float) * M * N, cudaMemAdviseSetAccessedBy, 0);
+  cudaMemPrefetchAsync(weight, std::min(sizeof(float) * M * N, free_m), deviceId, stream);
+  //cudaMemAdvise(weight, sizeof(float) * M * N, cudaMemAdviseSetAccessedBy, deviceId);
   cudaMemGetInfo(&free_m, &total_m);
   std::cout << "free size d_output: " << free_m << std::endl;
-  cudaMemPrefetchAsync(d_output, std::min(sizeof(float) * O, free_m), 0, stream);
+  cudaMemPrefetchAsync(d_output, std::min(sizeof(float) * O, free_m), deviceId, stream);
   cudaMemGetInfo(&free_m, &total_m);
   std::cout << "free size d_preact: " << free_m << std::endl;
-  cudaMemPrefetchAsync(d_preact, std::min(sizeof(float) * O, free_m), 0, stream);
+  cudaMemPrefetchAsync(d_preact, std::min(sizeof(float) * O, free_m), deviceId, stream);
   cudaMemGetInfo(&free_m, &total_m);
   std::cout << "free size d_weight: " << free_m << std::endl;
-  cudaMemPrefetchAsync(d_weight, std::min(sizeof(float) * M * N, free_m), 0, stream);
+  cudaMemPrefetchAsync(d_weight, std::min(sizeof(float) * M * N, free_m), deviceId, stream);
   std::cout << "prefetched layer" << std::endl;
 #endif
 cudaDeviceSynchronize();
@@ -109,9 +113,11 @@ Layer::~Layer() {
 
 // Send data one row from dataset to the GPU
 void Layer::setOutput(float *data) {
+  int deviceId;
+  cudaGetDevice(&deviceId);
   // cudaMemcpy(output, data, sizeof(float) * O, cudaMemcpyHostToDevice);
   memcpy(output, data, sizeof(float) * O); //TODO May change to prefetch
-  cudaMemPrefetchAsync(output,sizeof(float) * O,  0, stream );
+  cudaMemPrefetchAsync(output, sizeof(float) * O, deviceId, stream);
 
 }
 
