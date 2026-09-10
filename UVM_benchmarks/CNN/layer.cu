@@ -82,6 +82,7 @@ Layer::Layer(int M, int N, int O) {
   CHECK_CUDA(cudaMemAdvise(d_output, sizeof(float) * O, cudaMemAdviseSetAccessedBy, deviceId));
   CHECK_CUDA(cudaMemAdvise(d_preact, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
   CHECK_CUDA(cudaMemAdvise(d_preact, sizeof(float) * O, cudaMemAdviseSetAccessedBy, deviceId));
+  cudaDeviceSynchronize();
 #endif
   // prefetching the world
 #ifdef PREF
