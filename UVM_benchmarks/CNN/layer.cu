@@ -63,7 +63,7 @@ Layer::Layer(int M, int N, int O) {
   // cudaMemcpyHostToDevice);
   // memcpy(weight, h_weight, sizeof(float) * M * N);
 #ifdef MEMADVISE
-  /**CHECK_CUDA(cudaMemAdvise(output, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
+  CHECK_CUDA(cudaMemAdvise(output, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
   CHECK_CUDA(cudaMemAdvise(preact, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
   if(N>0){
     CHECK_CUDA(cudaMemAdvise(bias, sizeof(float) * N, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
@@ -74,7 +74,7 @@ Layer::Layer(int M, int N, int O) {
 
   CHECK_CUDA(cudaMemAdvise(d_output, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
   CHECK_CUDA(cudaMemAdvise(d_preact, sizeof(float) * O, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
-  cudaDeviceSynchronize();**/
+  cudaDeviceSynchronize();
 #endif
   // prefetching the world
 #ifdef PREF
