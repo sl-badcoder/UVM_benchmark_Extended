@@ -93,6 +93,7 @@ int main(int argc, const char **argv) {
   cudaDeviceSynchronize();
   cudaMemGetInfo(&free_m, &total_m);
 #ifdef PREF
+  std::cout << "free size: " << free_m << std::endl;
   cudaMemPrefetchAsync(train_set, std::min(total_train_size, (size_t)(free_m * 0.8)), deviceId, NULL);
 #endif
   std::cout << "prefetched train set" << std::endl;

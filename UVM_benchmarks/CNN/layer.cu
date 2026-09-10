@@ -69,23 +69,30 @@ Layer::Layer(int M, int N, int O) {
 #ifdef PREF
   size_t free_m, total_m;
   cudaMemGetInfo(&free_m, &total_m);
+  std::cout << "free size output: " << free_m << std::endl;
   cudaMemPrefetchAsync(output, std::min(sizeof(float) * O, free_m), 0, stream);
   cudaMemGetInfo(&free_m, &total_m);
+  std::cout << "free size preact: " << free_m << std::endl;
   cudaMemPrefetchAsync(preact, std::min(sizeof(float) * O, free_m), 0, stream);
   cudaMemGetInfo(&free_m, &total_m);
+  std::cout << "free size bias: " << free_m << std::endl;
   cudaMemPrefetchAsync(bias, std::min(sizeof(float) * N, free_m), 0, stream);
   cudaMemGetInfo(&free_m, &total_m);
+    std::cout << "free size weight: " << free_m << std::endl;
   cudaMemPrefetchAsync(weight, std::min(sizeof(float) * M * N, free_m), 0, stream);
   //cudaMemAdvise(weight, sizeof(float) * M * N, cudaMemAdviseSetAccessedBy, 0);
   cudaMemGetInfo(&free_m, &total_m);
+  std::cout << "free size d_output: " << free_m << std::endl;
   cudaMemPrefetchAsync(d_output, std::min(sizeof(float) * O, free_m), 0, stream);
   cudaMemGetInfo(&free_m, &total_m);
+  std::cout << "free size d_preact: " << free_m << std::endl;
   cudaMemPrefetchAsync(d_preact, std::min(sizeof(float) * O, free_m), 0, stream);
   cudaMemGetInfo(&free_m, &total_m);
+  std::cout << "free size d_weight: " << free_m << std::endl;
   cudaMemPrefetchAsync(d_weight, std::min(sizeof(float) * M * N, free_m), 0, stream);
+  std::cout << "prefetched layer" << std::endl;
 #endif
 cudaDeviceSynchronize();
-std::cout << "prefetched layer" << std::endl;
 }
 
 // Destructor
