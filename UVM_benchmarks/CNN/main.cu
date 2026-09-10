@@ -105,7 +105,7 @@ int main(int argc, const char **argv) {
   std::cout << "free size: " << (size_t)(free_m * 0.8)<< std::endl;
   std::cout << "total_train_size: " << total_train_size << std::endl;
   std::cout << "prefetched size: " << std::min(total_train_size, (size_t)(free_m * 0.8)) << std::endl;
-  cudaMemPrefetchAsync(train_set, 8589934592, deviceId, NULL);
+  cudaMemPrefetchAsync(train_set, std::min(total_train_size, (size_t)(free_m * 0.8)), deviceId, NULL);
 #endif
   cudaMemGetInfo(&free_m, &total_m);
   std::cout << "prefetched train set: " << free_m << std::endl;

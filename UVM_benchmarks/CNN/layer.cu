@@ -40,7 +40,10 @@ Layer::Layer(int M, int N, int O) {
   cudaMallocManaged(&d_preact, sizeof(float) * O);
   cudaMallocManaged(&d_weight, sizeof(float) * M * N);
 
-
+  for (int i = 0; i < O; ++i) {
+    d_preact[i] = 0.0f;
+    d_output[i] = 0.0f;
+  }
 
   for (int i = 0; i < N; ++i) {
     // h_bias[i] = 0.5f - float(rand()) / float(RAND_MAX);
@@ -49,6 +52,7 @@ Layer::Layer(int M, int N, int O) {
 
     for (int j = 0; j < M; ++j) {
       weight[M * i + j] = 0.5f - float(rand()) / float(RAND_MAX);
+      d_weight[M * i + j] = 0.0f;
       //   h_weight[i][j] = 0.5f - float(rand()) / float(RAND_MAX);
       /*h_weight[i][j] = 0.05f;*/
     }
